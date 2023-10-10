@@ -2,6 +2,7 @@ defmodule Stellar.TxBuild.SCVal do
   @moduledoc """
   `SCVal` struct definition.
   """
+  import Bitwise
 
   @behaviour Stellar.TxBuild.XDR
 
@@ -324,8 +325,7 @@ defmodule Stellar.TxBuild.SCVal do
 
   @spec to_native_from_xdr(xdr :: String.t()) :: any
   def to_native_from_xdr(xdr) when is_binary(xdr) do
-    with {:ok, decoded_xdr} <- validate_base64(xdr),
-         {:ok, {scval, _rest}} <- validate_xdr_decoding(decoded_xdr) do
+    with {:ok, {scval, _rest}} <- validate_xdr_decoding(xdr) do
       to_native(scval)
     end
   end
@@ -359,20 +359,6 @@ defmodule Stellar.TxBuild.SCVal do
       do: []
 
   def to_native(%SCVal{
-        type: %StellarBase.XDR.SCValType{identifier: :SCV_TIMEPOINT},
-        value: %StellarBase.XDR.TimePoint{value: value}
-      }) do
-    value
-  end
-
-  def to_native(%SCVal{
-        type: %StellarBase.XDR.SCValType{identifier: :SCV_DURATION},
-        value: %StellarBase.XDR.Duration{value: value}
-      }) do
-    value
-  end
-
-  def to_native(%SCVal{
         type: %StellarBase.XDR.SCValType{identifier: :SCV_VOID},
         value: _value
       }) do
@@ -393,7 +379,7 @@ defmodule Stellar.TxBuild.SCVal do
           lo: %StellarBase.XDR.UInt64{datum: lo_value}
         }
       }) do
-    {hi_value, lo_value}
+    (hi_value <<< 64) + lo_value
   end
 
   def to_native(%SCVal{
@@ -431,7 +417,7 @@ defmodule Stellar.TxBuild.SCVal do
           lo: %StellarBase.XDR.UInt64{datum: lo_value}
         }
       }) do
-    {hi_value, lo_value}
+    (hi_value <<< 64) + lo_value
   end
 
   def to_native(%SCVal{
@@ -443,7 +429,7 @@ defmodule Stellar.TxBuild.SCVal do
           lo_lo: %StellarBase.XDR.UInt64{datum: lo_lo_value}
         }
       }) do
-    {hi_hi_value, hi_lo_value, lo_hi_value, lo_lo_value}
+    (hi_hi_value <<< 192) + (hi_lo_value <<< 128) + (lo_hi_value <<< 64) + lo_lo_value
   end
 
   def to_native(%SCVal{
@@ -455,7 +441,7 @@ defmodule Stellar.TxBuild.SCVal do
           lo_lo: %StellarBase.XDR.UInt64{datum: lo_lo_value}
         }
       }) do
-    {hi_hi_value, hi_lo_value, lo_hi_value, lo_lo_value}
+    (hi_hi_value <<< 192) + (hi_lo_value <<< 128) + (lo_hi_value <<< 64) + lo_lo_value
   end
 
   def to_native(%SCVal{
@@ -486,19 +472,21 @@ defmodule Stellar.TxBuild.SCVal do
     end)
   end
 
-  @spec validate_base64(xdr :: String.t()) :: validation()
-  defp validate_base64(xdr) when is_binary(xdr) do
-    case Base.decode64(xdr) do
-      {:ok, decoded_xdr} -> {:ok, decoded_xdr}
-      _ -> {:error, :invalid_base64}
-    end
-  end
+  def to_native(%SCVal{
+        type: %StellarBase.XDR.SCValType{identifier: :SCV_MAP},
+        value: %StellarBase.XDR.OptionalSCMap{
+          sc_map: nil
+        }
+      }),
+      do: %{}
 
-  @spec validate_xdr_decoding(decoded_xdr :: binary()) :: validation()
-  defp validate_xdr_decoding(decoded_xdr) do
-    case SCVal.decode_xdr(decoded_xdr) do
-      {:ok, result} -> {:ok, result}
-      _ -> {:error, :invalid_XDR}
+  def to_native(_sc_val), do: {:error, :invalid_or_not_supported_sc_val}
+
+  @spec validate_xdr_decoding(xdr :: String.t()) :: validation()
+  defp validate_xdr_decoding(xdr) when is_binary(xdr) do
+    case Base.decode64(xdr) do
+      {:ok, decoded_xdr} -> SCVal.decode_xdr(decoded_xdr)
+      _ -> {:error, :invalid_base64}
     end
   end
 
